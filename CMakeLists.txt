@@ -36,11 +36,12 @@ zephyr_compile_options(
   -fshort-enums         # Use smallest possible enum size (saves memory)
 )
 
-# Performance optimizations (compiler-agnostic)
+# Performance optimizations (compiler-agnostic) - REMOVED potentially unsafe flags
 zephyr_compile_options(
-  -ffast-math           # Enable fast math optimizations (safe for integer-heavy code)
+  # SECURITY: Removed -ffast-math as it can cause undefined behavior with edge cases
+  # -ffast-math           # REMOVED: Can break IEEE compliance and cause security issues
   -fno-math-errno       # Don't set errno for math functions (performance gain)
-  -fno-trapping-math    # Assume no floating point exceptions (performance gain)
+  -fno-trapping-math    # Assume no floating point exceptions (performance gain) 
 )
 
 # Code generation optimizations

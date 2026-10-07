@@ -257,7 +257,7 @@ static inline uint16_t accel_decode_sensor_dpi(uint8_t dpi_class) {
     const size_t dpi_table_size = sizeof(dpi_table) / sizeof(dpi_table[0]);
     
     // Enhanced bounds checking: validate array size at compile time
-    __ASSERT_NO_MSG(dpi_table_size == 8);
+    _Static_assert(sizeof(dpi_table) / sizeof(dpi_table[0]) == 8, "DPI table size must be 8");
     
     // Runtime bounds checking with explicit size validation
     if (dpi_class >= dpi_table_size) {
@@ -266,7 +266,16 @@ static inline uint16_t accel_decode_sensor_dpi(uint8_t dpi_class) {
                dpi_class, dpi_table_size - 1);
         return 800; // Safe default value
     }
-    return dpi_table[dpi_class];
+    
+    // Additional safety: Verify the returned value is reasonable
+    uint16_t dpi_value = dpi_table[dpi_class];
+    if (dpi_value < 400 || dpi_value > 8000) {
+        printk("ACCEL: DPI table contains invalid value %u at index %u, using 800 DPI\n", 
+               dpi_value, dpi_class);
+        return 800;
+    }
+    
+    return dpi_value;
 }
 
 /**

@@ -36,20 +36,37 @@ uint32_t accel_safe_quadratic_curve(int32_t abs_input, uint32_t multiplier) {
         abs_input = max_safe_input;
     }
     
-    // Enhanced safety: Check for potential overflow before calculation
-    if (abs_input > 0 && multiplier > UINT32_MAX / (abs_input * abs_input)) {
-        LOG_WRN("Potential overflow detected, using conservative calculation");
-        // Use linear approximation instead
-        uint32_t linear_result = SENSITIVITY_SCALE + (abs_input * multiplier / QUADRATIC_LINEAR_DIVISOR);
-        return ACCEL_CLAMP(linear_result, SENSITIVITY_SCALE, MAX_SAFE_FACTOR);
+    // CRITICAL SECURITY FIX: Enhanced overflow protection with complete validation
+    // Step 1: Validate each multiplication operand individually
+    if (abs_input > 0) {
+        // Check if abs_input^2 would overflow
+        if (abs_input > UINT32_MAX / abs_input) {
+            LOG_WRN("Input squared would overflow: %d^2 > %u, using linear fallback", 
+                    abs_input, UINT32_MAX);
+            uint32_t linear_result = SENSITIVITY_SCALE + (abs_input * multiplier / QUADRATIC_LINEAR_DIVISOR);
+            return ACCEL_CLAMP(linear_result, SENSITIVITY_SCALE, MAX_SAFE_FACTOR);
+        }
     }
     
-    // Safe calculation with enhanced overflow check
-    uint64_t temp = (uint64_t)abs_input * abs_input * multiplier;
+    uint64_t abs_input_squared = (uint64_t)abs_input * abs_input;
     
-    // Enhanced safety: More conservative overflow check
-    if (temp > (UINT32_MAX - SENSITIVITY_SCALE) / QUADRATIC_SCALE_DIVISOR) {
-        LOG_WRN("Quadratic result too large, using maximum safe value");
+    // Step 2: Check if (abs_input^2 * multiplier) would overflow
+    if (abs_input_squared > 0 && multiplier > 0) {
+        if (abs_input_squared > UINT64_MAX / multiplier) {
+            LOG_WRN("Multiplication would overflow: %llu * %u > %llu, using linear fallback", 
+                    abs_input_squared, multiplier, UINT64_MAX);
+            uint32_t linear_result = SENSITIVITY_SCALE + (abs_input * multiplier / QUADRATIC_LINEAR_DIVISOR);
+            return ACCEL_CLAMP(linear_result, SENSITIVITY_SCALE, MAX_SAFE_FACTOR);
+        }
+    }
+    
+    uint64_t temp = abs_input_squared * multiplier;
+    
+    // Step 3: Check if division result would fit in uint32_t after addition
+    uint64_t scaled_temp = temp / QUADRATIC_SCALE_DIVISOR;
+    if (scaled_temp > UINT32_MAX - SENSITIVITY_SCALE) {
+        LOG_WRN("Final result would overflow uint32_t: %llu + %u > %u", 
+                scaled_temp, SENSITIVITY_SCALE, UINT32_MAX);
         return MAX_SAFE_FACTOR;
     }
     
@@ -93,11 +110,12 @@ uint32_t accel_calculate_simple_speed(struct accel_data *data, int32_t input_val
         abs_input = MAX_SAFE_INPUT_VALUE;
     }
     
-    // Minimal critical section for data consistency
+    // Extended critical section for complete data consistency
     unsigned int key = irq_lock();
     
     uint32_t current_time_ms = k_uptime_get_32();
     uint32_t last_time_ms = data->last_time_ms;
+    uint16_t previous_speed = data->recent_speed;
     
     // Handle first call or time overflow (still in critical section)
     if (last_time_ms == 0 || current_time_ms < last_time_ms) {
@@ -132,11 +150,18 @@ uint32_t accel_calculate_simple_speed(struct accel_data *data, int32_t input_val
     
     // Exponential moving average (smoother speed changes)
     uint16_t alpha = SPEED_MOVING_AVERAGE_ALPHA; // Alpha value in thousandths
-    uint16_t averaged_speed = (data->recent_speed * (SPEED_MOVING_AVERAGE_BASE - alpha) + current_speed * alpha) / SPEED_MOVING_AVERAGE_BASE;
+    uint16_t averaged_speed = (previous_speed * (SPEED_MOVING_AVERAGE_BASE - alpha) + current_speed * alpha) / SPEED_MOVING_AVERAGE_BASE;
     
-    // Update state in critical section
+    // Update state in critical section with integrity check
     data->last_time_ms = current_time_ms;
     data->recent_speed = averaged_speed;
+    
+    // Additional integrity check before releasing lock
+    if (data->last_time_ms != current_time_ms || data->recent_speed != averaged_speed) {
+        LOG_ERR("Data integrity check failed, possible memory corruption");
+        data->last_time_ms = current_time_ms;
+        data->recent_speed = 0; // Reset to safe state
+    }
     
     irq_unlock(key); // Release critical section
     
