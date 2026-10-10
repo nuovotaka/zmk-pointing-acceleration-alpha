@@ -88,6 +88,13 @@ struct zmk_input_processor_state;
 #define SPEED_ALPHA             250     // Simplified averaging
 #define SPEED_BASE              1000    // Scaling base
 
+// Legacy compatibility constants
+#define SPEED_CALC_TIME_LIMIT_MS SPEED_TIME_LIMIT_MS  // Backward compatibility
+#define SPEED_MOVING_AVERAGE_ALPHA  SPEED_ALPHA      // Alpha for moving average
+#define SPEED_MOVING_AVERAGE_BASE   SPEED_BASE       // Base for moving average
+#define SUSPICIOUS_RESULT_MULTIPLIER 10              // Suspicious result detection
+#define FALLBACK_SANITY_INPUT_LIMIT 20               // Sanity check input limit
+
 // Utility calculation constants
 #define QUADRATIC_SAFE_INPUT_LIMIT  1000    // Safe input limit for quadratic calculations
 #define QUADRATIC_LINEAR_DIVISOR    10      // Divisor for linear approximation
@@ -236,7 +243,6 @@ static inline uint16_t accel_decode_sensor_dpi(uint8_t dpi_class) {
 // Forward declarations for embedded helper functions  
 int32_t validate_and_clamp_input(int32_t input_value);
 int32_t safe_multiply_embedded(int32_t a, int32_t b);
-uint16_t calculate_speed_embedded(struct accel_data *data, int32_t input_value);
 uint16_t get_acceleration_factor(int32_t abs_input, uint8_t curve_type, uint16_t max_factor);
 
 // Utility functions (from utils.c)

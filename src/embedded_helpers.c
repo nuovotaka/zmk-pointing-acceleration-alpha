@@ -43,32 +43,10 @@ int32_t safe_multiply_embedded(int32_t a, int32_t b) {
 }
 
 // =============================================================================
-// EMBEDDED SPEED CALCULATION (INTERRUPT-SAFE)
+// EMBEDDED SPEED CALCULATION (INTERRUPT-SAFE)  
 // =============================================================================
-
-uint16_t calculate_speed_embedded(struct accel_data *data, int32_t input_value) {
-    if (!data) return 0;
-    
-    uint32_t now = k_uptime_get_32();
-    uint32_t delta = now - data->last_time_ms;
-    
-    // Handle first call or overflow
-    if (data->last_time_ms == 0 || delta > SPEED_TIME_LIMIT_MS) {
-        data->last_time_ms = now;
-        data->recent_speed = abs(input_value) * 10; // Simple initial speed
-        return data->recent_speed;
-    }
-    
-    // Simple speed: movement per 100ms
-    uint16_t current_speed = (delta > 0) ? 
-        (abs(input_value) * 100) / delta : abs(input_value) * 10;
-    
-    // Simple exponential average
-    data->recent_speed = (data->recent_speed * 3 + current_speed) / 4;
-    data->last_time_ms = now;
-    
-    return data->recent_speed;
-}
+// NOTE: Speed calculation is implemented in input_processor_accel_utils.c
+// as accel_calculate_simple_speed() - using that implementation
 
 // =============================================================================
 // EMBEDDED ACCELERATION CURVES (LOOKUP TABLE)

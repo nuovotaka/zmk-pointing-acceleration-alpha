@@ -15,7 +15,6 @@ LOG_MODULE_DECLARE(input_processor_accel);
 // Forward declarations
 int32_t validate_and_clamp_input(int32_t input_value);
 int32_t safe_multiply_embedded(int32_t a, int32_t b);
-uint16_t calculate_speed_embedded(struct accel_data *data, int32_t input_value);
 
 // =============================================================================
 // LEVEL 2 CALCULATION (EMBEDDED OPTIMIZED)
@@ -34,7 +33,7 @@ int32_t accel_standard_calculate(const struct accel_config *cfg, struct accel_da
     if (input_value == 0) return 0;
     
     // Calculate speed (simplified for embedded)
-    uint16_t speed = calculate_speed_embedded(data, input_value);
+    uint32_t speed = accel_calculate_simple_speed(data, input_value);
     
     // Get configuration values
     uint16_t speed_threshold = cfg->cfg.level2.speed_threshold;
