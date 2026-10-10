@@ -76,6 +76,12 @@ struct zmk_input_processor_state;
 #define ACCEL_THRESHOLD         5       // Basic threshold
 #define FALLBACK_FACTOR         2       // Conservative fallback
 
+// Missing fallback constants for compatibility
+#define FALLBACK_MAX_REDUCTION      4       // Maximum DPI reduction factor
+#define FALLBACK_MAX_INCREASE       3       // Maximum DPI increase factor  
+#define FALLBACK_MAX_ACCEL_LIMIT    5       // Maximum acceleration limit
+#define CONSERVATIVE_FALLBACK_MULTIPLIER 2  // Conservative fallback multiplier
+
 // Speed calculation (optimized for interrupts)
 #define SPEED_TIME_LIMIT_MS     500     // Reduced for responsiveness
 #define SPEED_ALPHA             250     // Simplified averaging
@@ -222,6 +228,26 @@ static inline uint16_t accel_decode_sensor_dpi(uint8_t dpi_class) {
     return (dpi_class < 6) ? dpi_table[dpi_class] : 800; // Default to 800 DPI
 }
 
+/**
+ * @brief Encode configuration values to scaled format (for compatibility)
+ */
+static inline uint8_t accel_encode_y_boost(uint16_t y_boost) {
+    // Encode 1000-3000 range to 0-200
+    if (y_boost < 1000) return 0;
+    if (y_boost > 3000) return 200;
+    return (uint8_t)((y_boost - 1000) / 10);
+}
+
+static inline uint8_t accel_encode_sensor_dpi(uint16_t sensor_dpi) {
+    // Encode common DPI values to classes
+    if (sensor_dpi <= 400) return 0;
+    if (sensor_dpi <= 800) return 1;
+    if (sensor_dpi <= 1200) return 2;
+    if (sensor_dpi <= 1600) return 3;
+    if (sensor_dpi <= 3200) return 4;
+    return 5; // 6400 DPI class
+}
+
 #ifdef __cplusplus
 }
 #endif
@@ -259,6 +285,10 @@ void accel_data_free(struct accel_data *data);
 // Configuration functions from presets
 void accel_config_apply_kconfig_preset(struct accel_config *cfg);
 int accel_config_init(struct accel_config *cfg, uint8_t level, int inst);
+
+// Encode/decode functions (from config.c)
+uint8_t accel_encode_y_boost(uint16_t y_boost);
+uint8_t accel_encode_sensor_dpi(uint16_t sensor_dpi);
 
 // Device initialization functions  
 int accel_device_init_instance(const struct device *dev, int inst);
