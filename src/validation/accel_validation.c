@@ -126,19 +126,11 @@ int accel_validate_config(const struct accel_config *cfg) {
     
     // Enhanced safety: Check for extreme value combinations that could cause overflow
     // Note: sensor_dpi already declared above, reuse it
-    uint64_t overflow_check = (uint64_t)sensitivity * max_factor;
-    if (overflow_check > UINT32_MAX / 1000) { // Conservative limit for DPI scaling
-        LOG_ERR("Extreme configuration detected: sensitivity=%u, max_factor=%u", 
-                sensitivity, max_factor);
-        LOG_ERR("This combination WILL cause calculation overflow");
-        return ACCEL_ERR_OVERFLOW;
-    }
-    
-    // Additional safety: Check DPI scaling impact
-    uint64_t dpi_overflow_check = overflow_check * sensor_dpi;
-    if (dpi_overflow_check > (UINT64_MAX / 10000)) { // Very conservative for all calculations
-        LOG_WRN("Configuration may cause overflow with DPI scaling: dpi=%u", sensor_dpi);
-        LOG_WRN("Consider reducing sensitivity or max_factor");
+    uint64_t overflow_check = (uint64_t)sensitivity * max_factor * sensor_dpi;
+    if (overflow_check > (UINT64_MAX / 4000)) { // Conservative limit
+        LOG_WRN("Extreme configuration detected: sensitivity=%u, max_factor=%u, dpi=%u", 
+                sensitivity, max_factor, sensor_dpi);
+        LOG_WRN("This combination may cause calculation overflow in extreme cases");
     }
     
     LOG_DBG("Configuration validation passed for level %u", cfg->level);

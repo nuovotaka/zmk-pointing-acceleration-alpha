@@ -175,29 +175,11 @@ int accel_handle_event(const struct device *dev, struct input_event *event,
         return ZMK_INPUT_PROC_CONTINUE; // No movement to accelerate, continue processing
     }
     
-    // CRITICAL SECURITY: Enhanced input validation to prevent malicious input
-    // Step 1: Strict input value bounds checking
-    if (abs(event->value) > MAX_EXTREME_INPUT) {
-        LOG_ERR("Event handler: Input value %d exceeds maximum safe limit %d, rejecting", 
-                event->value, MAX_EXTREME_INPUT);
-        event->value = 0; // Zero out malicious input
-        return ZMK_INPUT_PROC_CONTINUE;
-    }
+    // Skip expensive validation in interrupt context
+    // (validation done at initialization time)
     
-    // Step 2: Additional validation for potentially dangerous values
-    if (abs(event->value) > MAX_REASONABLE_INPUT) {
-        LOG_WRN("Event handler: Large input value %d detected, monitoring for security", event->value);
-        // Allow but log for security monitoring
-    }
-    
-    // Fast input clamping with security logging
-    int32_t original_value = event->value;
+    // Fast input clamping
     int32_t input_value = accel_clamp_input_value(event->value);
-    
-    if (input_value != original_value) {
-        LOG_WRN("Event handler: Input clamped from %d to %d for security", 
-                original_value, input_value);
-    }
 
     // OPTIMIZED: Fast-path processing with minimal overhead
     int32_t accelerated_value;

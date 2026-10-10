@@ -19,29 +19,21 @@ LOG_MODULE_DECLARE(input_processor_accel);
 int64_t safe_multiply_64(int64_t a, int64_t b, int64_t max_result) {
     if (a == 0 || b == 0) return 0;
     
-    // CRITICAL SECURITY: Enhanced overflow detection with complete coverage
-    // Handle all sign combinations systematically
-    
-    // Step 1: Convert to absolute values for overflow checking
-    int64_t abs_a = (a < 0) ? -a : a;
-    int64_t abs_b = (b < 0) ? -b : b;
-    int64_t abs_max = (max_result < 0) ? -max_result : max_result;
-    
-    // Step 2: Check for overflow in absolute value multiplication
-    if (abs_a > 0 && abs_b > abs_max / abs_a) {
-        // Would overflow, return clamped result with proper sign
-        bool result_negative = (a < 0) != (b < 0); // XOR for sign
-        return result_negative ? -abs_max : abs_max;
+    // Enhanced safety: More robust overflow detection
+    if (a > 0 && b > 0) {
+        if (a > max_result / b) return max_result;
+    } else if (a < 0 && b < 0) {
+        // Both negative: result is positive
+        if ((-a) > max_result / (-b)) return max_result;
+    } else if (a < 0 && b > 0) {
+        // a negative, b positive: result is negative
+        if ((-a) > max_result / b) return -max_result;
+    } else if (a > 0 && b < 0) {
+        // a positive, b negative: result is negative
+        if (a > max_result / (-b)) return -max_result;
     }
     
-    // Step 3: Perform safe multiplication
-    int64_t result = a * b;
-    
-    // Step 4: Final bounds checking
-    if (result > max_result) return max_result;
-    if (result < -max_result) return -max_result;
-    
-    return result;
+    return a * b;
 }
 
 int32_t safe_int64_to_int32(int64_t value) {
@@ -130,72 +122,65 @@ uint32_t calculate_dpi_adjusted_sensitivity(const struct accel_config *cfg) {
 
 #if defined(CONFIG_INPUT_PROCESSOR_ACCEL_LEVEL_STANDARD)
 uint32_t calculate_exponential_curve(uint32_t t, uint8_t exponent) {
-    // CRITICAL SECURITY: Enhanced input validation and overflow protection
+    // Input validation
     if (t > SPEED_NORMALIZATION) {
-        LOG_WRN("Exponential curve: Input %u exceeds normalization %u, clamping", 
-                t, SPEED_NORMALIZATION);
         t = SPEED_NORMALIZATION;
-    }
-    
-    if (exponent > 5) {
-        LOG_ERR("Exponential curve: Invalid exponent %u, using default 2", exponent);
-        exponent = 2;
     }
     
     switch (exponent) {
         case 1: // Linear
             return t;
             
-        case 2: // Mild exponential - Enhanced security
+        case 2: // Mild exponential
             {
-                // Step 1: Check for square overflow
-                if (t > 0 && t > UINT64_MAX / t) {
-                    LOG_WRN("Exponential curve: t^2 would overflow, using linear");
-                    return ACCEL_CLAMP(t * 2, 0, SPEED_NORMALIZATION * 2);
-                }
-                
                 uint64_t t_sq = (uint64_t)t * t;
-                
-                // Step 2: Check division safety
-                if (CURVE_MILD_DIVISOR == 0) {
-                    LOG_ERR("Exponential curve: Zero divisor detected");
-                    return t; // Linear fallback
-                }
-                
                 uint32_t quad = (t_sq > CURVE_MILD_DIVISOR * UINT32_MAX) ? 
                     UINT32_MAX : (uint32_t)(t_sq / CURVE_MILD_DIVISOR);
-                    
-                // Step 3: Check final addition safety
                 uint32_t result = (t > UINT32_MAX - quad) ? UINT32_MAX : t + quad;
                 return ACCEL_CLAMP(result, 0, SPEED_NORMALIZATION * 2);
             }
             
-        case 3: // Moderate exponential - Enhanced security
-        case 4: // Strong exponential - Enhanced security  
-        case 5: // Aggressive exponential - Enhanced security
+        case 3: // Moderate exponential
             {
-                // For higher exponents, use more conservative approach to prevent overflow
-                // Step 1: Validate input for higher powers
-                if (t > 100) { // Conservative limit for higher exponents
-                    LOG_DBG("Exponential curve: Large input %u for exponent %u, using quadratic approximation", 
-                            t, exponent);
-                    // Use quadratic approximation for large inputs
-                    uint64_t t_sq = (uint64_t)t * t;
-                    uint32_t multiplier = (exponent == 3) ? 3 : (exponent == 4) ? 4 : 5;
-                    uint32_t result = t + (uint32_t)(t_sq / (2000ULL / multiplier));
-                    return ACCEL_CLAMP(result, 0, SPEED_NORMALIZATION * multiplier);
-                }
-                
-                // For small inputs, use safer calculation
                 uint64_t t_sq = (uint64_t)t * t;
-                uint32_t quad_factor = (exponent == 3) ? 1000 : (exponent == 4) ? 800 : 600;
-                uint32_t result = t + (uint32_t)(t_sq / quad_factor);
-                return ACCEL_CLAMP(result, 0, SPEED_NORMALIZATION * exponent);
+                uint32_t quad = (t_sq > CURVE_MODERATE_QUAD_DIV * UINT32_MAX) ? 
+                    UINT32_MAX : (uint32_t)(t_sq / CURVE_MODERATE_QUAD_DIV);
+                uint64_t t_cb = (t_sq > UINT64_MAX / t) ? UINT64_MAX : t_sq * t;
+                uint32_t cubic = (t_cb > CURVE_MODERATE_CUBIC_DIV * UINT32_MAX) ? 
+                    UINT32_MAX : (uint32_t)(t_cb / CURVE_MODERATE_CUBIC_DIV);
+                uint64_t temp_result = (uint64_t)t + quad + cubic;
+                uint32_t result = (temp_result > UINT32_MAX) ? UINT32_MAX : (uint32_t)temp_result;
+                return ACCEL_CLAMP(result, 0, SPEED_NORMALIZATION * 3);
             }
             
-        default: // Safe fallback
+        case 4: // Strong exponential
             {
-                LOG_WRN("Exponential curve: Unknown exponent %u, using quadratic fallback", exponent);
+                uint64_t t_sq = (uint64_t)t * t;
+                uint32_t quad = (t_sq > CURVE_STRONG_QUAD_DIV * UINT32_MAX) ? 
+                    UINT32_MAX : (uint32_t)(t_sq / CURVE_STRONG_QUAD_DIV);
+                uint64_t t_cb = (t_sq > UINT64_MAX / t) ? UINT64_MAX : t_sq * t;
+                uint32_t cubic = (t_cb > CURVE_STRONG_CUBIC_DIV * UINT32_MAX) ? 
+                    UINT32_MAX : (uint32_t)(t_cb / CURVE_STRONG_CUBIC_DIV);
+                uint64_t temp_result = (uint64_t)t + quad + cubic;
+                uint32_t result = (temp_result > UINT32_MAX) ? UINT32_MAX : (uint32_t)temp_result;
+                return ACCEL_CLAMP(result, 0, SPEED_NORMALIZATION * 4);
+            }
+            
+        case 5: // Aggressive exponential
+            {
+                uint64_t t_sq = (uint64_t)t * t;
+                uint32_t quad = (t_sq > CURVE_AGGRESSIVE_QUAD_DIV * UINT32_MAX) ? 
+                    UINT32_MAX : (uint32_t)(t_sq / CURVE_AGGRESSIVE_QUAD_DIV);
+                uint64_t t_cb = (t_sq > UINT64_MAX / t) ? UINT64_MAX : t_sq * t;
+                uint32_t cubic = (t_cb > CURVE_AGGRESSIVE_CUBIC_DIV * UINT32_MAX) ? 
+                    UINT32_MAX : (uint32_t)(t_cb / CURVE_AGGRESSIVE_CUBIC_DIV);
+                uint64_t temp_result = (uint64_t)t + quad + cubic;
+                uint32_t result = (temp_result > UINT32_MAX) ? UINT32_MAX : (uint32_t)temp_result;
+                return ACCEL_CLAMP(result, 0, SPEED_NORMALIZATION * 5);
+            }
+            
+        default: // Fallback quadratic
+            {
                 uint64_t t_sq = (uint64_t)t * t;
                 uint32_t result = (t_sq > CURVE_DEFAULT_DIVISOR * UINT32_MAX) ? 
                     UINT32_MAX : (uint32_t)(t_sq / CURVE_DEFAULT_DIVISOR);

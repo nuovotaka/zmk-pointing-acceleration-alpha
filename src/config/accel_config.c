@@ -19,68 +19,35 @@ LOG_MODULE_DECLARE(input_processor_accel);
 struct accel_data *accel_data_alloc(void) {
     struct accel_data *data;
     int ret = k_mem_slab_alloc(&accel_data_pool, (void **)&data, K_NO_WAIT);
-    if (ret != 0 || data == NULL) {
-        // Enhanced error handling with acceleration-specific error codes
-        if (ret == -ENOMEM) {
-            LOG_ERR("Memory pool exhausted - no available accel_data blocks");
-            // Note: Keep original -ENOMEM for k_mem_slab compatibility, but could map to ACCEL_ERR_NO_MEMORY
-        } else if (ret == -EAGAIN) {
-            LOG_ERR("Memory allocation would block - called from interrupt context");
-            // Note: Keep original -EAGAIN for k_mem_slab compatibility, but could map to ACCEL_ERR_TEMP_UNAVAIL
-        } else {
-            LOG_ERR("Failed to allocate accel_data from pool: %d (ptr=%p)", ret, data);
-        }
-        return NULL;
+    if (ret == 0 && data != NULL) {
+        // Enhanced safety: Validate allocated pointer before use
+        memset(data, 0, sizeof(struct accel_data));
+        // Initialize with safe default values to prevent issues
+        data->last_time_ms = k_uptime_get_32();
+        data->recent_speed = 0;
+        LOG_DBG("Allocated accel_data from pool: %p", data);
+        return data;
     }
     
-    // Enhanced safety: Validate allocated pointer before use
-    if ((uintptr_t)data < 0x20000000 || (uintptr_t)data > 0x30000000) {
-        LOG_ERR("Allocated pointer %p appears to be outside valid RAM range", data);
-        k_mem_slab_free(&accel_data_pool, (void *)data);
-        return NULL;
+    // Enhanced error handling with acceleration-specific error codes
+    if (ret == -ENOMEM) {
+        LOG_ERR("Memory pool exhausted - no available accel_data blocks");
+        // Note: Keep original -ENOMEM for k_mem_slab compatibility, but could map to ACCEL_ERR_NO_MEMORY
+    } else if (ret == -EAGAIN) {
+        LOG_ERR("Memory allocation would block - called from interrupt context");
+        // Note: Keep original -EAGAIN for k_mem_slab compatibility, but could map to ACCEL_ERR_TEMP_UNAVAIL
+    } else {
+        LOG_ERR("Failed to allocate accel_data from pool: %d (ptr=%p)", ret, data);
     }
     
-    // Enhanced safety: Zero the memory before validation to prevent information leakage
-    volatile uint32_t *check_ptr = (volatile uint32_t *)data;
-    memset(data, 0, sizeof(struct accel_data));
-    
-    // Enhanced safety: Verify memory was properly zeroed
-    if (*check_ptr != 0) {
-        LOG_ERR("Memory zeroing failed, potential memory corruption");
-        k_mem_slab_free(&accel_data_pool, (void *)data);
-        return NULL;
-    }
-    
-    // Initialize with safe default values to prevent issues
-    data->last_time_ms = k_uptime_get_32();
-    data->recent_speed = 0;
-    LOG_DBG("Allocated accel_data from pool: %p", data);
-    return data;
+    return NULL;
 }
 
 void accel_data_free(struct accel_data *data) {
-    if (!data) {
-        LOG_WRN("Attempt to free NULL accel_data pointer");
-        return;
+    if (data) {
+        k_mem_slab_free(&accel_data_pool, (void *)data);
+        LOG_DBG("Freed accel_data to pool: %p", data);
     }
-    
-    // Enhanced security: Validate pointer before freeing to prevent double-free
-    // Check if pointer appears to be in valid memory range
-    if ((uintptr_t)data < 0x20000000 || (uintptr_t)data > 0x30000000) {
-        LOG_ERR("Invalid pointer %p in free operation, possible corruption", data);
-        return;
-    }
-    
-    // Enhanced security: Clear sensitive data before freeing to prevent information leakage
-    volatile struct accel_data *secure_clear = (volatile struct accel_data *)data;
-    secure_clear->last_time_ms = 0;
-    secure_clear->recent_speed = 0;
-    
-    // Enhanced security: Memory barrier to ensure clearing is completed
-    __sync_synchronize();
-    
-    k_mem_slab_free(&accel_data_pool, (void *)data);
-    LOG_DBG("Freed and cleared accel_data: %p", data);
 }
 
 // =============================================================================

@@ -84,33 +84,19 @@ int32_t accel_simple_calculate(const struct accel_config *cfg, int32_t input_val
         return input_value;
     }
     
-    // CRITICAL SECURITY FIX: Complete overflow protection for sensitivity calculation
+    // CRITICAL FIX: Safe DPI adjustment with comprehensive overflow protection
     int64_t result;
     
-    // Step 1: Validate operands individually before any calculation
-    if (abs(input_value) > INT32_MAX / 1000) {
-        LOG_WRN("Level1: Input value %d too large for safe calculation", input_value);
-        return accel_safe_fallback_calculate(input_value, cfg->cfg.level1.max_factor);
+    // Enhanced safety: Use 64-bit safe comparison for overflow detection
+    const int64_t max_safe_input = INT64_MAX / dpi_adjusted_sensitivity;
+    if (abs(input_value) > max_safe_input) {
+        LOG_WRN("Level1: Potential overflow detected, using safe calculation");
+        // Use safe multiplication with proper 64-bit limits
+        result = safe_multiply_64((int64_t)input_value, (int64_t)dpi_adjusted_sensitivity, 
+                                 (int64_t)INT32_MAX * SENSITIVITY_SCALE);
+    } else {
+        result = (int64_t)input_value * (int64_t)dpi_adjusted_sensitivity;
     }
-    
-    if (dpi_adjusted_sensitivity > INT64_MAX / abs(input_value)) {
-        LOG_WRN("Level1: Sensitivity %u too large for input %d, using fallback", 
-                dpi_adjusted_sensitivity, input_value);
-        return accel_safe_fallback_calculate(input_value, cfg->cfg.level1.max_factor);
-    }
-    
-    // Step 2: Safe multiplication with comprehensive bounds checking
-    int64_t temp_result = (int64_t)input_value * (int64_t)dpi_adjusted_sensitivity;
-    
-    // Step 3: Validate intermediate result before any further operations
-    const int64_t max_safe_intermediate = (int64_t)INT16_MAX * SENSITIVITY_SCALE * 10; // Conservative limit
-    if (abs(temp_result) > max_safe_intermediate) {
-        LOG_WRN("Level1: Intermediate result %lld exceeds safe limit %lld", 
-                temp_result, max_safe_intermediate);
-        return accel_safe_fallback_calculate(input_value, cfg->cfg.level1.max_factor);
-    }
-    
-    result = temp_result;
     
     #if defined(CONFIG_INPUT_PROCESSOR_ACCEL_DEBUG_LOG)
     LOG_DBG("Level1: input=%d * adj_sens=%u = raw_result=%lld", 
