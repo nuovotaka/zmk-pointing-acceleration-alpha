@@ -42,6 +42,7 @@ struct zmk_input_processor_state;
 #define MAX_SAFE_SENSITIVITY    MAX_SENSITIVITY  
 #define MIN_SAFE_SENSITIVITY    MIN_SENSITIVITY
 #define MAX_REASONABLE_SPEED    MAX_SPEED
+#define MAX_SAFE_INPUT_VALUE    MAX_INPUT_VALUE  // Legacy compatibility
 
 // Embedded-optimized configuration ranges
 #define SENSITIVITY_RANGE_MIN   300
@@ -228,26 +229,6 @@ static inline uint16_t accel_decode_sensor_dpi(uint8_t dpi_class) {
     return (dpi_class < 6) ? dpi_table[dpi_class] : 800; // Default to 800 DPI
 }
 
-/**
- * @brief Encode configuration values to scaled format (for compatibility)
- */
-static inline uint8_t accel_encode_y_boost(uint16_t y_boost) {
-    // Encode 1000-3000 range to 0-200
-    if (y_boost < 1000) return 0;
-    if (y_boost > 3000) return 200;
-    return (uint8_t)((y_boost - 1000) / 10);
-}
-
-static inline uint8_t accel_encode_sensor_dpi(uint16_t sensor_dpi) {
-    // Encode common DPI values to classes
-    if (sensor_dpi <= 400) return 0;
-    if (sensor_dpi <= 800) return 1;
-    if (sensor_dpi <= 1200) return 2;
-    if (sensor_dpi <= 1600) return 3;
-    if (sensor_dpi <= 3200) return 4;
-    return 5; // 6400 DPI class
-}
-
 #ifdef __cplusplus
 }
 #endif
@@ -258,8 +239,20 @@ int32_t safe_multiply_embedded(int32_t a, int32_t b);
 uint16_t calculate_speed_embedded(struct accel_data *data, int32_t input_value);
 uint16_t get_acceleration_factor(int32_t abs_input, uint8_t curve_type, uint16_t max_factor);
 
+// Utility functions (from utils.c)
+uint32_t accel_safe_quadratic_curve(int32_t abs_input, uint32_t multiplier);
+int32_t accel_safe_fallback_calculate(int32_t input_value, uint32_t max_factor);
+uint32_t accel_calculate_simple_speed(struct accel_data *data, int32_t input_value);
+
 // Common calculation functions (from calc_common.c)
 uint32_t calculate_dpi_adjusted_sensitivity(const struct accel_config *cfg);
+int64_t safe_multiply_64(int64_t a, int64_t b, int64_t max_result);
+int32_t safe_int64_to_int32(int64_t value);
+int16_t safe_int32_to_int16(int32_t value);
+
+#if defined(CONFIG_INPUT_PROCESSOR_ACCEL_LEVEL_STANDARD)
+uint32_t calculate_exponential_curve(uint32_t t, uint8_t exponent);
+#endif
 
 /**
  * @brief Main acceleration calculation functions (level-specific)
@@ -286,7 +279,7 @@ void accel_data_free(struct accel_data *data);
 void accel_config_apply_kconfig_preset(struct accel_config *cfg);
 int accel_config_init(struct accel_config *cfg, uint8_t level, int inst);
 
-// Encode/decode functions (from config.c)
+// Encode/decode functions (external implementation in config.c - avoid inline duplicate)
 uint8_t accel_encode_y_boost(uint16_t y_boost);
 uint8_t accel_encode_sensor_dpi(uint16_t sensor_dpi);
 

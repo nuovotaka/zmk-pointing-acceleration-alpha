@@ -150,7 +150,7 @@ int32_t accel_safe_fallback_calculate(int32_t input_value, uint32_t max_factor) 
     }
     
     // Enhanced safety: Input validation
-    input_value = accel_clamp_input_value(input_value);
+    input_value = validate_and_clamp_input(input_value);
     int32_t abs_input = abs(input_value);
     int32_t result = input_value;
     
