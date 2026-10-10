@@ -82,6 +82,8 @@ struct zmk_input_processor_state;
 #define FALLBACK_MAX_INCREASE       3       // Maximum DPI increase factor  
 #define FALLBACK_MAX_ACCEL_LIMIT    5       // Maximum acceleration limit
 #define CONSERVATIVE_FALLBACK_MULTIPLIER 2  // Conservative fallback multiplier
+#define FALLBACK_ACCEL_THRESHOLD    5       // Fallback acceleration threshold
+#define FALLBACK_ACCEL_MULTIPLIER   3       // Fallback acceleration multiplier
 
 // Speed calculation (optimized for interrupts)
 #define SPEED_TIME_LIMIT_MS     500     // Reduced for responsiveness
