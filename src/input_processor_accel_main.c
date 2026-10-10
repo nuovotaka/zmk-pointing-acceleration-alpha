@@ -122,97 +122,61 @@ DT_INST_FOREACH_STATUS_OKAY(ACCEL_DEVICE_DEFINE)
 
 
 // =============================================================================
-// MAIN EVENT HANDLER
+// MAIN EVENT HANDLER (OPTIMIZED FOR EMBEDDED KEYBOARDS)
 // =============================================================================
-
-// =============================================================================
-// OPTIMIZED FAST-PATH EVENT HANDLER
-// =============================================================================
-
-
 
 int accel_handle_event(const struct device *dev, struct input_event *event,
                       uint32_t param1, uint32_t param2,
                       struct zmk_input_processor_state *state) {
-    // CRITICAL: Minimize interrupt processing time
-    // Enhanced NULL pointer validation with proper error reporting
-    if (!dev) {
-        LOG_ERR("Device pointer is NULL in event handler");
-        return ACCEL_ERR_INVALID_ARG;
-    }
-    if (!event) {
-        LOG_ERR("Event pointer is NULL in event handler");
-        return ACCEL_ERR_INVALID_ARG;
-    }
-    if (!dev->config) {
-        LOG_ERR("Device config is NULL for device %s", dev->name ? dev->name : "unknown");
-        return ACCEL_ERR_NO_DEVICE;
-    }
-    if (!dev->data) {
-        LOG_ERR("Device data is NULL for device %s", dev->name ? dev->name : "unknown");
-        return ACCEL_ERR_NO_DEVICE;
+    
+    // Fast null checks (critical for interrupt performance)
+    if (!dev || !event || !dev->config || !dev->data) {
+        return ZMK_INPUT_PROC_CONTINUE;
     }
     
     const struct accel_config *cfg = dev->config;
     struct accel_data *data = dev->data;
     
-    // Fast path checks - optimized for common cases with clear logic
-    // Check event type first
-    if (event->type != cfg->input_type) {
-        return ZMK_INPUT_PROC_CONTINUE; // Wrong event type, continue processing
+    // Fast path: check event type and code
+    if (event->type != cfg->input_type || event->value == 0) {
+        return ZMK_INPUT_PROC_CONTINUE;
     }
     
-    // Check for supported axis codes (movement + scroll)
-    if (event->code != INPUT_REL_X && 
-        event->code != INPUT_REL_Y && 
-        event->code != INPUT_REL_WHEEL && 
-        event->code != INPUT_REL_HWHEEL) {
-        return ZMK_INPUT_PROC_CONTINUE; // Unsupported axis, continue processing
+    // Check supported axes (optimized for keyboard devices)
+    if (event->code != INPUT_REL_X && event->code != INPUT_REL_Y && 
+        event->code != INPUT_REL_WHEEL && event->code != INPUT_REL_HWHEEL) {
+        return ZMK_INPUT_PROC_CONTINUE;
     }
     
-    // Check for zero movement (no acceleration needed)
-    if (event->value == 0) {
-        return ZMK_INPUT_PROC_CONTINUE; // No movement to accelerate, continue processing
+    // Input validation (minimal for embedded)
+    int32_t input_value = event->value;
+    if (abs(input_value) > MAX_INPUT_VALUE) {
+        input_value = (input_value > 0) ? MAX_INPUT_VALUE : -MAX_INPUT_VALUE;
     }
     
-    // Skip expensive validation in interrupt context
-    // (validation done at initialization time)
-    
-    // Fast input clamping
-    int32_t input_value = accel_clamp_input_value(event->value);
-
-    // OPTIMIZED: Fast-path processing with minimal overhead
-    int32_t accelerated_value;
-    
-    // Ultra-fast calculation dispatch - branch prediction optimized
+    // Fast calculation dispatch
+    int32_t result;
     if (cfg->level == 1) {
-        // Level 1: Use simple calculation from dedicated file
-        accelerated_value = accel_simple_calculate(cfg, input_value, event->code);
+        result = accel_simple_calculate(cfg, input_value, event->code);
     } else {
-        // Level 2: Use standard calculation from dedicated file
-        accelerated_value = accel_standard_calculate(cfg, data, input_value, event->code);
+        result = accel_standard_calculate(cfg, data, input_value, event->code);
     }
     
-    // Minimal safety check - emergency brake only
-    if (__builtin_expect(abs(accelerated_value) > EMERGENCY_BRAKE_THRESHOLD, 0)) {
-        // Unlikely path - extreme values
-        accelerated_value = (accelerated_value > 0) ? EMERGENCY_BRAKE_LIMIT : -EMERGENCY_BRAKE_LIMIT;
+    // Emergency brake (simplified)
+    if (abs(result) > EMERGENCY_LIMIT) {
+        result = (result > 0) ? EMERGENCY_LIMIT : -EMERGENCY_LIMIT;
     }
     
-    // Minimum movement guarantee - optimized
-    if (__builtin_expect(input_value != 0 && accelerated_value == 0, 0)) {
-        accelerated_value = (input_value > 0) ? 1 : -1;
+    // Ensure minimum movement
+    if (input_value != 0 && result == 0) {
+        result = (input_value > 0) ? 1 : -1;
     }
     
-    // Final safety validation before updating event (no logging in interrupt context)
-    if (__builtin_expect(abs(accelerated_value) > INT16_MAX, 0)) {
-        // Emergency clamp without logging to maintain real-time performance
-        accelerated_value = (accelerated_value > 0) ? INT16_MAX : INT16_MIN;
-    }
+    // Final clamp and update
+    if (result > INT16_MAX) result = INT16_MAX;
+    if (result < INT16_MIN) result = INT16_MIN;
     
-    // Update event value - single assignment with final validation
-    event->value = accelerated_value;
-    
+    event->value = result;
     return ZMK_INPUT_PROC_CONTINUE;
 }
 

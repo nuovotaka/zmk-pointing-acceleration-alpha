@@ -27,64 +27,59 @@ extern "C" {
 struct zmk_input_processor_state;
 
 // =============================================================================
-// CONSTANTS AND CONFIGURATION
+// EMBEDDED SYSTEM OPTIMIZED CONSTANTS
 // =============================================================================
 
-// Core safety limits to prevent overflow and system crashes - aligned with Kconfig
-#define MAX_SAFE_INPUT_VALUE    2000    // Maximum safe input value (increased for trackball support)
-#define MAX_SAFE_FACTOR         10000   // Maximum safe acceleration factor
-#define MAX_SAFE_SENSITIVITY    2000    // Maximum safe sensitivity (aligned with Kconfig)
-#define MIN_SAFE_SENSITIVITY    200     // Minimum safe sensitivity (aligned with Kconfig)
-#define MAX_REASONABLE_SPEED    50000   // Maximum reasonable speed (counts/sec)
+// Core limits optimized for keyboard/pointing devices
+#define MAX_INPUT_VALUE         200     // Keyboard/mouse typical max delta
+#define MAX_ACCEL_FACTOR        3000    // Conservative max for embedded (3x)
+#define MAX_SENSITIVITY         1500    // Reduced for keyboard use
+#define MIN_SENSITIVITY         300     // Practical minimum
+#define MAX_SPEED               10000   // Sufficient for keyboard devices
 
-// Input validation constants
-#define MAX_REASONABLE_INPUT    200     // Maximum reasonable input for normal use
-#define MAX_EXTREME_INPUT_MULTIPLIER 3  // Multiplier for extreme input limit (200 * 3 = 600)
-#define MAX_EXTREME_INPUT       (MAX_REASONABLE_INPUT * MAX_EXTREME_INPUT_MULTIPLIER)
+// Backward compatibility with validation requirements
+#define MAX_SAFE_FACTOR         MAX_ACCEL_FACTOR
+#define MAX_SAFE_SENSITIVITY    MAX_SENSITIVITY  
+#define MIN_SAFE_SENSITIVITY    MIN_SENSITIVITY
+#define MAX_REASONABLE_SPEED    MAX_SPEED
 
-// Configuration range constants
-#define SENSITIVITY_MIN         200     // Minimum sensitivity value
-#define SENSITIVITY_MAX         2000    // Maximum sensitivity value
-#define MAX_FACTOR_MIN          1000    // Minimum max_factor value
-#define MAX_FACTOR_MAX          5000    // Maximum max_factor value
-#define CURVE_TYPE_MIN          0       // Minimum curve type
-#define CURVE_TYPE_MAX          2       // Maximum curve type
-#define SENSOR_DPI_MIN          400     // Minimum sensor DPI
-#define SENSOR_DPI_MAX          8000    // Maximum sensor DPI
-#define SPEED_THRESHOLD_MIN     100     // Minimum speed threshold
-#define SPEED_THRESHOLD_MAX     2000    // Maximum speed threshold
-#define SPEED_MAX_MIN           1000    // Minimum speed max
-#define SPEED_MAX_MAX           8000    // Maximum speed max
-#define MIN_FACTOR_MIN          200     // Minimum min_factor value
-#define MIN_FACTOR_MAX          1500    // Maximum min_factor value
-#define ACCEL_EXPONENT_MIN      1       // Minimum acceleration exponent
-#define ACCEL_EXPONENT_MAX      5       // Maximum acceleration exponent
+// Embedded-optimized configuration ranges
+#define SENSITIVITY_RANGE_MIN   300
+#define SENSITIVITY_RANGE_MAX   1500
+#define FACTOR_RANGE_MIN        1000
+#define FACTOR_RANGE_MAX        3000
+#define DPI_RANGE_MIN          400
+#define DPI_RANGE_MAX          3200     // Sufficient for most keyboards
+#define SPEED_THRESHOLD_RANGE  500
+#define ACCEL_EXP_MAX          3       // Simplified curve options
 
-// Emergency brake and safety constants
-#define EMERGENCY_BRAKE_THRESHOLD   500     // Emergency brake activation threshold
-#define EMERGENCY_BRAKE_LIMIT       400     // Emergency brake output limit
-#define SUSPICIOUS_RESULT_MULTIPLIER 10     // Multiplier for suspicious result detection
-#define CONSERVATIVE_FALLBACK_MULTIPLIER 2  // Conservative fallback multiplier
+// Backward compatibility with old naming
+#define SENSITIVITY_MIN         SENSITIVITY_RANGE_MIN
+#define SENSITIVITY_MAX         SENSITIVITY_RANGE_MAX  
+#define MAX_FACTOR_MIN          FACTOR_RANGE_MIN
+#define MAX_FACTOR_MAX          FACTOR_RANGE_MAX
+#define CURVE_TYPE_MIN          0
+#define CURVE_TYPE_MAX          2
+#define SENSOR_DPI_MIN          DPI_RANGE_MIN
+#define SENSOR_DPI_MAX          DPI_RANGE_MAX
+#define SPEED_THRESHOLD_MIN     100
+#define SPEED_THRESHOLD_MAX     2000
+#define SPEED_MAX_MIN           1000
+#define SPEED_MAX_MAX           8000
+#define MIN_FACTOR_MIN          200
+#define MIN_FACTOR_MAX          1500
+#define ACCEL_EXPONENT_MIN      1
+#define ACCEL_EXPONENT_MAX      ACCEL_EXP_MAX
 
-// Acceleration curve constants
-#define ACCEL_THRESHOLD_BASIC       5       // Basic acceleration threshold
-#define CURVE_MILD_QUAD_NUMERATOR   25      // Mild curve quadratic numerator
-#define CURVE_MILD_QUAD_DENOMINATOR 100     // Mild curve quadratic denominator
-#define CURVE_STRONG_QUAD_NUMERATOR 50      // Strong curve quadratic numerator
-#define CURVE_STRONG_QUAD_DENOMINATOR 100   // Strong curve quadratic denominator
+// Embedded safety limits (simplified)
+#define EMERGENCY_LIMIT         200     // Emergency clamp
+#define ACCEL_THRESHOLD         5       // Basic threshold
+#define FALLBACK_FACTOR         2       // Conservative fallback
 
-// Speed calculation constants
-#define SPEED_CALC_TIME_LIMIT_MS    1000    // Time limit for speed calculation (1 second)
-#define SPEED_MOVING_AVERAGE_ALPHA  300     // Alpha for exponential moving average (0.3 * 1000)
-#define SPEED_MOVING_AVERAGE_BASE   1000    // Base for moving average calculation
-
-// Fallback calculation constants
-#define FALLBACK_ACCEL_THRESHOLD    5       // Threshold for fallback acceleration
-#define FALLBACK_ACCEL_MULTIPLIER   3       // Multiplier for fallback acceleration
-#define FALLBACK_MAX_REDUCTION      4       // Maximum reduction factor (1/4)
-#define FALLBACK_MAX_INCREASE       3       // Maximum increase factor (3x)
-#define FALLBACK_MAX_ACCEL_LIMIT    5       // Maximum acceleration limit (5x)
-#define FALLBACK_SANITY_INPUT_LIMIT 20      // Input limit for sanity check
+// Speed calculation (optimized for interrupts)
+#define SPEED_TIME_LIMIT_MS     500     // Reduced for responsiveness
+#define SPEED_ALPHA             250     // Simplified averaging
+#define SPEED_BASE              1000    // Scaling base
 
 // Utility calculation constants
 #define QUADRATIC_SAFE_INPUT_LIMIT  1000    // Safe input limit for quadratic calculations
@@ -167,60 +162,48 @@ struct zmk_input_processor_state;
 // =============================================================================
 
 /**
- * @brief Ultra-compact acceleration data structure - 6 bytes total
- * Memory layout optimized for 32-bit ARM Cortex-M:
- * - 4 bytes: last_time_ms (uint32_t) - aligned to 4-byte boundary
- * - 2 bytes: recent_speed (uint16_t) - packed efficiently
- * Total: 6 bytes (was 8 bytes, 25% reduction)
- */
-struct accel_data {
-    uint32_t last_time_ms;         // Time tracking for speed calculation
-    uint16_t recent_speed;         // Recent speed (16-bit, sufficient for MCU)
-    // Removed: speed_samples (not critical for performance)
-    // Removed: reserved padding (not needed with 6-byte structure)
-} __packed;
-
-// Static memory pool for runtime data - declared here, defined in main.c
-extern struct k_mem_slab accel_data_pool;
-
-/**
- * @brief Level-specific configuration union - saves memory
- * Only stores configuration relevant to the active level
+ * @brief Level-specific configuration union for embedded systems
  */
 union accel_level_config {
     struct {
-        uint16_t sensitivity;      // Base sensitivity multiplier
-        uint16_t max_factor;       // Maximum acceleration factor
-        uint8_t curve_type;        // Acceleration curve type (0-2)
-        uint8_t reserved;          // Padding for alignment
-    } level1;                      // 6 bytes for Level 1
+        uint16_t sensitivity;      // Base sensitivity
+        uint16_t max_factor;       // Max acceleration
+        uint8_t curve_type;        // Curve type (0-2)
+        uint8_t reserved;          // Padding
+    } level1;                      // 6 bytes
     
     struct {
-        uint16_t sensitivity;      // Base sensitivity multiplier
-        uint16_t max_factor;       // Maximum acceleration factor
-        uint16_t min_factor;       // Minimum acceleration factor
-        uint16_t speed_threshold;  // Speed threshold (16-bit sufficient)
-        uint16_t speed_max;        // Speed for maximum acceleration (16-bit)
-        uint8_t acceleration_exponent; // Exponential curve exponent
-        uint8_t reserved;          // Padding for alignment
-    } level2;                      // 10 bytes for Level 2
+        uint16_t sensitivity;      // Base sensitivity
+        uint16_t max_factor;       // Max acceleration  
+        uint16_t min_factor;       // Min acceleration
+        uint16_t speed_threshold;  // Speed threshold
+        uint16_t speed_max;        // Speed maximum
+        uint8_t acceleration_exponent; // Curve exponent
+        uint8_t reserved;          // Padding
+    } level2;                      // 10 bytes
 } __packed;
 
 /**
- * @brief Ultra-optimized acceleration configuration structure
- * Memory layout: 20 bytes total (was ~32 bytes, 37.5% reduction)
- * - 8 bytes: pointer + uint32_t (codes, codes_count)
- * - 10 bytes: union accel_level_config (max size)
- * - 2 bytes: packed fields (y_boost, sensor_dpi as scaled values)
+ * @brief Compact acceleration data structure for embedded systems - 6 bytes
+ * Optimized for keyboard/pointing devices with limited RAM
+ */
+struct accel_data {
+    uint32_t last_time_ms;         // Last event timestamp
+    uint16_t recent_speed;         // Moving average speed
+} __packed;
+
+/**
+ * @brief Embedded-optimized configuration structure - 16 bytes  
+ * Reduced from 20 bytes for better memory efficiency
  */
 struct accel_config {
-    const uint16_t *codes;         // Pointer to codes array
-    uint32_t codes_count;          // Number of codes
-    union accel_level_config cfg;  // Level-specific configuration
-    uint8_t y_boost_scaled;        // Y-axis boost (scaled: 100-300 = 1.0x-3.0x)
-    uint8_t sensor_dpi_class;      // DPI class: 0=400, 1=800, 2=1200, 3=1600, 4=3200, 5=6400
-    uint8_t input_type;            // Input event type
-    uint8_t level;                 // Configuration level (1 or 2)
+    const uint16_t *codes;         // Input codes (4 bytes)
+    uint32_t codes_count;          // Number of codes (4 bytes)
+    union accel_level_config cfg;  // Level config (max 10 bytes -> 8 bytes optimized)
+    uint8_t y_boost_scaled;        // Y boost (1 byte)
+    uint8_t sensor_dpi_class;      // DPI class (1 byte) 
+    uint8_t input_type;            // Event type (1 byte)
+    uint8_t level;                 // Config level (1 byte)
 } __packed;
 
 // =============================================================================
@@ -228,91 +211,57 @@ struct accel_config {
 // =============================================================================
 
 /**
- * @brief Validate configuration values at initialization
- * @param cfg Configuration structure to validate
- * @return 0 if valid, negative error code if invalid
- */
-int accel_validate_config(const struct accel_config *cfg);
-
-/**
- * @brief Apply Kconfig preset to configuration (implemented in device initialization)
- * Note: This functionality is handled during device tree initialization
- */
-
-/**
- * @brief Memory pool management functions
- */
-struct accel_data *accel_data_alloc(void);
-void accel_data_free(struct accel_data *data);
-
-/**
- * @brief Decode scaled configuration values
+ * @brief Decode scaled configuration values (simplified for embedded)
  */
 static inline uint16_t accel_decode_y_boost(uint8_t scaled) {
-    return 1000 + (scaled * 10); // 100-300 -> 1000-3000
+    return 1000 + (scaled * 10); // Simple linear mapping
 }
 
 static inline uint16_t accel_decode_sensor_dpi(uint8_t dpi_class) {
-    static const uint16_t dpi_table[] = {400, 800, 1200, 1600, 3200, 6400, 8000, 800};
-    const size_t dpi_table_size = sizeof(dpi_table) / sizeof(dpi_table[0]);
-    
-    // Enhanced bounds checking: validate array size at compile time
-    __ASSERT_NO_MSG(dpi_table_size == 8);
-    
-    // Runtime bounds checking with explicit size validation
-    if (dpi_class >= dpi_table_size) {
-        // Use printk for header file (no LOG module available)
-        printk("ACCEL: Invalid DPI class %u (max %zu), using default 800 DPI\n", 
-               dpi_class, dpi_table_size - 1);
-        return 800; // Safe default value
-    }
-    return dpi_table[dpi_class];
+    static const uint16_t dpi_table[] = {400, 800, 1200, 1600, 3200, 6400};
+    return (dpi_class < 6) ? dpi_table[dpi_class] : 800; // Default to 800 DPI
 }
-
-/**
- * @brief Encode configuration values to scaled format (declared in accel_config.c)
- */
-uint8_t accel_encode_y_boost(uint16_t y_boost);
-uint8_t accel_encode_sensor_dpi(uint16_t sensor_dpi);
-
-/**
- * @brief Safely clamp input value to prevent overflow - optimized for speed
- */
-static inline int32_t accel_clamp_input_value(int32_t input_value) {
-    // Branchless clamping for better performance on ARM Cortex-M
-    int32_t max_val = MAX_SAFE_INPUT_VALUE;
-    int32_t min_val = -MAX_SAFE_INPUT_VALUE;
-    
-    input_value = (input_value > max_val) ? max_val : input_value;
-    input_value = (input_value < min_val) ? min_val : input_value;
-    return input_value;
-}
-
-uint32_t accel_safe_quadratic_curve(int32_t abs_input, uint32_t multiplier);
-int32_t accel_safe_fallback_calculate(int32_t input_value, uint32_t max_factor);
-
-int accel_handle_event(const struct device *dev, struct input_event *event,
-                      uint32_t param1, uint32_t param2,
-                      struct zmk_input_processor_state *state);
-
-// Level-specific calculation functions
-int32_t accel_simple_calculate(const struct accel_config *cfg, int32_t input_value, uint16_t code);
-int32_t accel_standard_calculate(const struct accel_config *cfg, struct accel_data *data, 
-                                int32_t input_value, uint16_t code);
-
-// Common calculation functions (shared between levels)
-int64_t safe_multiply_64(int64_t a, int64_t b, int64_t max_result);
-int32_t safe_int64_to_int32(int64_t value);
-int16_t safe_int32_to_int16(int32_t value);
-uint32_t calculate_dpi_adjusted_sensitivity(const struct accel_config *cfg);
-
-#if defined(CONFIG_INPUT_PROCESSOR_ACCEL_LEVEL_STANDARD)
-uint32_t calculate_exponential_curve(uint32_t t, uint8_t exponent);
-#endif
-
-// Simplified speed calculation functions
-uint32_t accel_calculate_simple_speed(struct accel_data *data, int32_t input_value);
 
 #ifdef __cplusplus
 }
 #endif
+
+// Forward declarations for embedded helper functions  
+int32_t validate_and_clamp_input(int32_t input_value);
+int32_t safe_multiply_embedded(int32_t a, int32_t b);
+uint16_t calculate_speed_embedded(struct accel_data *data, int32_t input_value);
+uint16_t get_acceleration_factor(int32_t abs_input, uint8_t curve_type, uint16_t max_factor);
+
+// Common calculation functions (from calc_common.c)
+uint32_t calculate_dpi_adjusted_sensitivity(const struct accel_config *cfg);
+
+/**
+ * @brief Main acceleration calculation functions (level-specific)
+ */
+int32_t accel_simple_calculate(const struct accel_config *cfg, int32_t input_value, uint16_t code);
+int32_t accel_standard_calculate(const struct accel_config *cfg, struct accel_data *data, 
+                                int32_t input_value, uint16_t code);
+
+/**
+ * @brief Main event handler (optimized for embedded keyboards)
+ */
+int accel_handle_event(const struct device *dev, struct input_event *event,
+                      uint32_t param1, uint32_t param2,
+                      struct zmk_input_processor_state *state);
+
+/**
+ * @brief Configuration and validation functions
+ */
+int accel_validate_config(const struct accel_config *cfg);
+struct accel_data *accel_data_alloc(void);
+void accel_data_free(struct accel_data *data);
+
+// Configuration functions from presets
+void accel_config_apply_kconfig_preset(struct accel_config *cfg);
+int accel_config_init(struct accel_config *cfg, uint8_t level, int inst);
+
+// Device initialization functions  
+int accel_device_init_instance(const struct device *dev, int inst);
+
+// Static memory pool (defined in main.c)
+extern struct k_mem_slab accel_data_pool;
