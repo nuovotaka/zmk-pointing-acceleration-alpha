@@ -8,7 +8,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/kernel.h>
 #include <stdlib.h>
-#include "drivers/input_processor_accel.h"
+#include "../include/drivers/input_processor_accel.h"
 
 LOG_MODULE_DECLARE(input_processor_accel);
 
