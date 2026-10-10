@@ -238,14 +238,14 @@ static inline uint16_t accel_decode_sensor_dpi(uint8_t dpi_class) {
     return (dpi_class < 6) ? dpi_table[dpi_class] : 800; // Default to 800 DPI
 }
 
-#ifdef __cplusplus
-}
-#endif
-
 // Forward declarations for embedded helper functions  
 int32_t validate_and_clamp_input(int32_t input_value);
 int32_t safe_multiply_embedded(int32_t a, int32_t b);
 uint16_t get_acceleration_factor(int32_t abs_input, uint8_t curve_type, uint16_t max_factor);
+
+#ifdef __cplusplus
+}
+#endif
 
 // Utility functions (from utils.c)
 uint32_t accel_safe_quadratic_curve(int32_t abs_input, uint32_t multiplier);
